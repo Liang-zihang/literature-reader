@@ -133,37 +133,60 @@
             margin-top: 10px;
         }
 
-        /* 表格区域：支持完整换行和滚动 */
+        /* 表格区域：完整显示所有文字，支持横向滚动 */
         .table-wrapper {
             overflow-x: auto;
+            overflow-y: visible;
             border-radius: 20px;
+            width: 100%;
+        }
+        
+        /* 横向滚动提示 */
+        .scroll-hint {
+            margin-bottom: 10px;
+            font-size: 0.75rem;
+            color: #6c8eae;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 6px;
         }
 
         .papers-table {
             width: 100%;
             border-collapse: collapse;
             font-size: 0.82rem;
-            min-width: 1000px;
+            min-width: 1200px;
         }
 
         .papers-table th {
             background: #1C2F41;
             color: white;
-            padding: 14px 10px;
+            padding: 14px 12px;
             text-align: left;
             font-weight: 600;
             white-space: nowrap;
         }
 
         .papers-table td {
-            padding: 12px 10px;
+            padding: 14px 12px;
             border-bottom: 1px solid #e9edf2;
             vertical-align: top;
             background-color: white;
             word-break: break-word;
             white-space: normal;
-            max-width: 280px;
+            line-height: 1.5;
         }
+
+        /* 为不同列设置合理的最小宽度，保证完整显示 */
+        .papers-table td:nth-child(1) { min-width: 50px; }
+        .papers-table td:nth-child(2) { min-width: 220px; }
+        .papers-table td:nth-child(3) { min-width: 140px; }
+        .papers-table td:nth-child(4) { min-width: 260px; }
+        .papers-table td:nth-child(5) { min-width: 220px; }
+        .papers-table td:nth-child(6) { min-width: 280px; }
+        .papers-table td:nth-child(7) { min-width: 280px; }
+        .papers-table td:nth-child(8) { min-width: 240px; }
 
         .empty-row td {
             text-align: center;
@@ -214,7 +237,8 @@
 
         @media (max-width: 760px) {
             .papers-table td {
-                max-width: 180px;
+                font-size: 0.75rem;
+                padding: 10px 8px;
             }
         }
     </style>
@@ -239,7 +263,7 @@
         <div class="upload-area" id="uploadArea">
             <div style="font-size: 48px;">📚📄</div>
             <p><strong>点击选择 PDF 文件（可多选）</strong></p>
-            <p style="color: #7c9bb5; font-size: 0.8rem;">支持中英文学术论文 · AI 智能提取全部字段</p>
+            <p style="color: #7c9bb5; font-size: 0.8rem;">支持中英文学术论文 · AI 智能提取全部字段 · 文字完整显示</p>
         </div>
         <input type="file" id="pdfInput" accept=".pdf" multiple style="display: none;">
         <div id="fileList" class="file-list" style="margin-top: 12px; font-size: 0.8rem; color: #2c5282;"></div>
@@ -250,9 +274,12 @@
         <div id="statusMsg" class="status-msg">✅ 就绪。请输入 API Key，然后上传 PDF 开始解析。</div>
     </div>
 
-    <!-- 论文信息表（完整字段） -->
+    <!-- 论文信息表（完整字段，无省略号） -->
     <div class="card">
-        <h2 style="font-size: 1.4rem; margin-bottom: 12px; color: #1C4E6F;">📋 论文结构化信息表</h2>
+        <h2 style="font-size: 1.4rem; margin-bottom: 8px; color: #1C4E6F;">📋 论文结构化信息表</h2>
+        <div class="scroll-hint">
+            <span>↔️ 表格支持横向滚动，左右滑动查看全部字段（文字完整显示）</span>
+        </div>
         <div class="table-wrapper">
             <table class="papers-table" id="papersTable">
                 <thead>
@@ -274,7 +301,7 @@
             <div class="review-content" id="reviewContent">⏳ 等待解析论文后，将调用 DeepSeek 生成高质量综述（包含研究脉络、共识分歧、未来方向）。</div>
         </div>
     </div>
-    <footer>⚡ 基于 DeepSeek API | 文本提取 + AI 结构化 | 若为扫描件请先 OCR 处理</footer>
+    <footer>⚡ 基于 DeepSeek API | 文本提取 + AI 结构化 | 若为扫描件请先 OCR 处理 | 表格内文字完整无截断</footer>
 </div>
 
 <script>
@@ -331,7 +358,7 @@
                     const typedarray = new Uint8Array(e.target.result);
                     const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
                     let fullText = '';
-                    const maxPages = Math.min(pdf.numPages, 12); // 前12页足够包含核心信息
+                    const maxPages = Math.min(pdf.numPages, 12);
                     for (let i = 1; i <= maxPages; i++) {
                         const page = await pdf.getPage(i);
                         const content = await page.getTextContent();
@@ -349,7 +376,7 @@
         });
     }
 
-    // 调用 DeepSeek 提取结构化信息（包含研究结果）
+    // 调用 DeepSeek 提取结构化信息
     async function extractWithAI(fullText, fileName) {
         const prompt = `你是一位商科领域的资深教授，请从以下论文文本中提取结构化信息。
 
@@ -396,7 +423,6 @@ ${fullText.substring(0, 5000)}
         }
         const data = await response.json();
         const content = data.choices[0].message.content;
-        // 提取 JSON 块
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error('AI 返回格式错误，未找到 JSON');
         const parsed = JSON.parse(jsonMatch[0]);
@@ -459,13 +485,13 @@ ${fullText.substring(0, 5000)}
         }
         papersData.push(...newPapers);
         updateTable();
-        await generateReviewWithAI();   // 调用 AI 生成综述
+        await generateReviewWithAI();
         statusMsgDiv.innerHTML = `🎉 解析完成！成功 ${success}/${files.length} 篇，总计 ${papersData.length} 篇文献。综述已生成。`;
         pdfInput.value = '';
         fileListDiv.innerHTML = '';
     }
 
-    // 更新表格（完整换行显示）
+    // 更新表格（完整显示，无任何截断）
     function updateTable() {
         if (!papersData.length) {
             tableBody.innerHTML = '<tr class="empty-row"><td colspan="8">暂无数据，请上传并解析 PDF 文件</td></tr>';
@@ -475,19 +501,19 @@ ${fullText.substring(0, 5000)}
         papersData.forEach((p, idx) => {
             html += `<tr>
                 <td style="vertical-align:top;">${idx + 1}</td>
-                <td><strong>${escapeHtml(p.title.substring(0, 120))}</strong></td>
+                <td><strong>${escapeHtml(p.title)}</strong></td>
                 <td>${escapeHtml(p.journal)}</td>
-                <td>${escapeHtml(p.background.substring(0, 180))}${p.background.length > 180 ? '…' : ''}</td>
-                <td>${escapeHtml(p.objective.substring(0, 150))}${p.objective.length > 150 ? '…' : ''}</td>
-                <td>${escapeHtml(p.method.substring(0, 180))}${p.method.length > 180 ? '…' : ''}</td>
-                <td>${escapeHtml(p.results ? p.results.substring(0, 200) : '—')}${p.results && p.results.length > 200 ? '…' : ''}</td>
-                <td>${escapeHtml(p.conclusion.substring(0, 180))}${p.conclusion.length > 180 ? '…' : ''}</td>
-            </tr>`;
+                <td>${escapeHtml(p.background)}</td>
+                <td>${escapeHtml(p.objective)}</td>
+                <td>${escapeHtml(p.method)}</td>
+                <td>${escapeHtml(p.results || '—')}</td>
+                <td>${escapeHtml(p.conclusion)}</td>
+            <tr>`;
         });
         tableBody.innerHTML = html;
     }
 
-    // 使用 AI 生成文献综述 (基于 papersData)
+    // 使用 AI 生成文献综述
     async function generateReviewWithAI() {
         if (!papersData.length) {
             reviewContentDiv.innerHTML = '暂无论文数据，解析后自动生成综述。';
@@ -499,7 +525,6 @@ ${fullText.substring(0, 5000)}
         }
         reviewContentDiv.innerHTML = '<span class="loading"></span> 教授级综述生成中，请稍候...';
         
-        // 构建论文摘要
         const summary = papersData.map((p, i) => {
             return `【论文${i+1}】\n标题：${p.title}\n目的：${p.objective}\n方法：${p.method}\n结果：${p.results}\n结论：${p.conclusion}`;
         }).join('\n\n---\n\n');
@@ -555,7 +580,6 @@ ${summary.substring(0, 7000)}
         fileListDiv.innerHTML = '';
     }
 
-    // 事件绑定
     processBtn.addEventListener('click', processAllFiles);
     clearBtn.addEventListener('click', clearAll);
     updateTable();
