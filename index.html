@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>商科智能文献分析系统 | 教授级综述生成</title>
-    <!-- 使用更稳定的 PDF.js CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
+    <title>商科智能文献分析系统 | 教授级综述</title>
+    <!-- 使用国内稳定的 CDN (unpkg 镜像) -->
+    <script src="https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -13,7 +13,7 @@
             box-sizing: border-box;
         }
         body {
-            font-family: 'Segoe UI', Roboto, system-ui, sans-serif;
+            font-family: 'Segoe UI', Roboto, sans-serif;
             background: #f0f2f8;
             padding: 20px;
             min-height: 100vh;
@@ -85,6 +85,10 @@
             border-radius: 60px;
             font-size: 0.85rem;
         }
+        .status-error {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
         .table-wrapper {
             overflow-x: auto;
         }
@@ -133,6 +137,20 @@
             border-radius: 16px;
             font-size: 0.8rem;
         }
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #ccc;
+            border-top-color: #1C4E6F;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -147,7 +165,7 @@
         <div class="upload-area" id="uploadArea">
             <div style="font-size: 48px;">📚📄</div>
             <p><strong>点击选择PDF文件（可多选）</strong></p>
-            <p style="color: #7c9bb5; font-size: 0.8rem;">支持中英文学术论文，自动提取标题/刊物/目的/方法/结论</p>
+            <p style="color: #7c9bb5; font-size: 0.8rem;">支持中英文学术论文，自动提取标题/目的/方法/结论</p>
         </div>
         <input type="file" id="pdfInput" accept=".pdf" multiple style="display: none;">
         <div id="fileList" class="file-list" style="display: none;"></div>
@@ -162,9 +180,9 @@
         <h2 style="font-size: 1.4rem; margin-bottom: 15px; color: #1C4E6F;">📋 论文信息表</h2>
         <div class="table-wrapper">
             <table id="papersTable">
-                <thead><tr><th>#</th><th>论文题目</th><th>刊物</th><th>研究目的</th><th>研究方法</th><th>主要结论</th></tr></thead>
+                <thead><tr><th>#</th><th>论文题目</th><th>刊物</th><th>研究目的</th><th>研究方法</th><th>主要结论</th></thead>
                 <tbody id="tableBody"><tr class="empty-row"><td colspan="6">暂无数据，请上传PDF文件</td></tr></tbody>
-            </table>
+             </table>
         </div>
     </div>
 
@@ -178,10 +196,18 @@
 </div>
 
 <script>
-    // 初始化 PDF.js (使用更稳定的配置)
-    if (typeof pdfjsLib !== 'undefined') {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/build/pdf.worker.min.js';
-    }
+    // 等待 PDF.js 加载完成后设置 Worker
+    setTimeout(function() {
+        if (typeof pdfjsLib !== 'undefined') {
+            // 使用 unpkg 的 worker
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.worker.min.js';
+            console.log('PDF.js 初始化完成');
+        } else {
+            console.error('PDF.js 加载失败');
+            document.getElementById('statusMsg').innerHTML = '⚠️ PDF解析库加载失败，请检查网络后刷新页面重试。';
+            document.getElementById('statusMsg').classList.add('status-error');
+        }
+    }, 100);
 
     let papersData = [];
 
@@ -195,16 +221,15 @@
     const uploadArea = document.getElementById('uploadArea');
     const fileListDiv = document.getElementById('fileList');
 
-    // 点击上传区域
     uploadArea.addEventListener('click', () => pdfInput.click());
     
-    // 显示选中的文件
     pdfInput.addEventListener('change', function(e) {
         if (this.files.length > 0) {
             let names = Array.from(this.files).map(f => f.name).join(', ');
             fileListDiv.style.display = 'block';
             fileListDiv.innerHTML = `📎 已选择 ${this.files.length} 个文件: ${names}`;
             statusMsgDiv.innerHTML = `✅ 已选择 ${this.files.length} 个PDF，点击「解析并生成综述」开始处理。`;
+            statusMsgDiv.classList.remove('status-error');
         } else {
             fileListDiv.style.display = 'none';
         }
@@ -220,7 +245,7 @@
         });
     }
 
-    // 从文本中提取元数据
+    // 从文本中提取元数据（增强版）
     function extractMetaFromText(text, fileName) {
         let result = {
             title: '',
@@ -234,14 +259,17 @@
         let cleaned = text.replace(/\s+/g, ' ').trim();
         let searchText = cleaned.length > 5000 ? cleaned.substring(0, 5000) : cleaned;
         
-        // 提取标题
-        let lines = cleaned.split(/\n/).filter(l => l.trim().length > 10 && l.trim().length < 200);
-        if (lines.length > 0) {
-            let firstLine = lines[0].trim();
-            if (!/^\d+$/.test(firstLine) && firstLine.length > 3) {
-                result.title = firstLine;
-            } else if (lines.length > 1) {
-                result.title = lines[1].trim();
+        // 提取标题 - 查找常见标题模式
+        let titlePatterns = [
+            /^([A-Z][A-Z\s\-:，,]{5,100})[\.\n]/m,
+            /标题[：:]\s*([^\n]{10,80})/,
+            /【题目】([^\n]{10,80})/
+        ];
+        for (let pattern of titlePatterns) {
+            let match = searchText.match(pattern);
+            if (match && match[1]) {
+                result.title = match[1].trim();
+                break;
             }
         }
         if (!result.title && fileName) {
@@ -257,54 +285,89 @@
         }
         if (!result.journal) result.journal = "SSCI 潜在期刊";
         
-        // 辅助提取函数
+        // 辅助提取函数 - 按段落提取
         function extractByKeywords(keywords, maxLen, defaultMsg) {
-            let sentences = searchText.split(/(?<=[。!?;！？；\n])/g);
-            for (let i = 0; i < sentences.length; i++) {
-                let lower = sentences[i].toLowerCase();
-                if (keywords.some(kw => lower.includes(kw.toLowerCase()))) {
-                    let section = sentences.slice(i, Math.min(i+3, sentences.length)).join(' ').trim();
-                    return section.length > maxLen ? section.substring(0, maxLen) + '…' : section;
+            let paragraphs = searchText.split(/\n{2,}|\r\n\r\n/);
+            for (let para of paragraphs) {
+                let lowerPara = para.toLowerCase();
+                if (keywords.some(kw => lowerPara.includes(kw.toLowerCase()))) {
+                    let clean = para.replace(/\s+/g, ' ').trim();
+                    if (clean.length > maxLen) clean = clean.substring(0, maxLen) + '…';
+                    return clean;
+                }
+            }
+            // 如果没有找到，尝试从句子中找
+            let sentences = searchText.split(/(?<=[。!?;！？；])/g);
+            for (let sent of sentences) {
+                let lowerSent = sent.toLowerCase();
+                if (keywords.some(kw => lowerSent.includes(kw.toLowerCase()))) {
+                    let clean = sent.replace(/\s+/g, ' ').trim();
+                    if (clean.length > maxLen) clean = clean.substring(0, maxLen) + '…';
+                    return clean;
                 }
             }
             return defaultMsg;
         }
         
-        result.objective = extractByKeywords(['目的', '研究目的', 'objective', 'aim', '目标', 'purpose'], 350, '探索关键变量间的关系与影响机制。');
-        result.method = extractByKeywords(['方法', '研究方法', 'method', 'methodology', '数据', '样本', '模型', '回归'], 380, '采用问卷调查/二手数据/案例研究等实证方法。');
-        result.conclusion = extractByKeywords(['结论', '结论与启示', 'conclusion', 'findings', '研究发现', '启示'], 450, '研究结果对理论和实践具有重要贡献。');
+        result.objective = extractByKeywords(['目的', '研究目的', 'objective', 'aim', '目标', 'purpose', '本文旨在', '本研究旨在'], 350, '探索关键变量间的关系与影响机制。');
+        result.method = extractByKeywords(['方法', '研究方法', 'method', 'methodology', '数据', '样本', '模型', '回归', '问卷', '实验'], 380, '采用问卷调查/二手数据/案例研究等实证方法。');
+        result.conclusion = extractByKeywords(['结论', '结论与启示', 'conclusion', 'findings', '研究发现', '启示', '总结'], 450, '研究结果对理论和实践具有重要贡献。');
         
         return result;
     }
 
-    // 解析单个PDF
+    // 解析单个PDF（带详细错误信息）
     async function parsePDFFile(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = async function(e) {
                 try {
                     const typedarray = new Uint8Array(e.target.result);
-                    const loadingTask = pdfjsLib.getDocument({ data: typedarray });
-                    const pdf = await loadingTask.promise;
-                    let fullText = '';
-                    const maxPages = Math.min(pdf.numPages, 8); // 限制页数加快速度
-                    for (let i = 1; i <= maxPages; i++) {
-                        const page = await pdf.getPage(i);
-                        const content = await page.getTextContent();
-                        const pageText = content.items.map(item => item.str).join(' ');
-                        fullText += pageText + '\n';
-                    }
-                    if (!fullText.trim()) {
-                        reject(new Error('PDF无法提取文本（可能是扫描件）'));
+                    
+                    // 检查 pdfjsLib 是否可用
+                    if (typeof pdfjsLib === 'undefined') {
+                        reject(new Error('PDF解析库未加载，请刷新页面重试'));
                         return;
                     }
+                    
+                    const loadingTask = pdfjsLib.getDocument({ 
+                        data: typedarray,
+                        useSystemFonts: true,
+                        disableFontFace: false
+                    });
+                    
+                    const pdf = await loadingTask.promise;
+                    let fullText = '';
+                    const maxPages = Math.min(pdf.numPages, 8);
+                    
+                    for (let i = 1; i <= maxPages; i++) {
+                        try {
+                            const page = await pdf.getPage(i);
+                            const content = await page.getTextContent();
+                            const pageText = content.items.map(item => item.str).join(' ');
+                            fullText += pageText + '\n';
+                        } catch (pageErr) {
+                            console.warn(`第${i}页提取失败:`, pageErr);
+                            continue;
+                        }
+                    }
+                    
+                    if (!fullText.trim() || fullText.trim().length < 50) {
+                        reject(new Error('PDF文本内容过少，可能为扫描图片型PDF，请使用文字版PDF'));
+                        return;
+                    }
+                    
                     const meta = extractMetaFromText(fullText, file.name);
                     resolve(meta);
                 } catch (err) {
-                    reject(err);
+                    console.error('PDF解析错误:', err);
+                    let errorMsg = err.message || '未知错误';
+                    if (errorMsg.includes('InvalidPDFException')) errorMsg = 'PDF文件损坏或格式无效';
+                    if (errorMsg.includes('MissingPDFException')) errorMsg = 'PDF文件不完整';
+                    reject(new Error(errorMsg));
                 }
             };
-            reader.onerror = () => reject(new Error('文件读取失败'));
+            reader.onerror = () => reject(new Error('文件读取失败，请重试'));
             reader.readAsArrayBuffer(file);
         });
     }
@@ -314,25 +377,31 @@
         const files = pdfInput.files;
         if (!files || files.length === 0) {
             statusMsgDiv.innerHTML = '⚠️ 请先选择PDF文件（点击上传区域选择）';
+            statusMsgDiv.classList.add('status-error');
             return;
         }
         
-        statusMsgDiv.innerHTML = `⏳ 正在解析 ${files.length} 篇文献，请稍候...`;
+        statusMsgDiv.classList.remove('status-error');
+        statusMsgDiv.innerHTML = `<span class="loading"></span> 正在解析 ${files.length} 篇文献，请稍候...`;
+        
         let newPapers = [];
+        let successCount = 0;
         
         for (let i = 0; i < files.length; i++) {
-            statusMsgDiv.innerHTML = `📖 解析第 ${i+1}/${files.length} 篇: ${files[i].name}`;
+            statusMsgDiv.innerHTML = `<span class="loading"></span> 解析第 ${i+1}/${files.length} 篇: ${files[i].name.substring(0, 40)}...`;
+            
             try {
                 const meta = await parsePDFFile(files[i]);
                 newPapers.push(meta);
+                successCount++;
             } catch (err) {
                 console.error(`解析失败: ${files[i].name}`, err);
                 newPapers.push({
-                    title: `解析失败: ${files[i].name}`,
-                    journal: '提取错误',
+                    title: `⚠️ 解析失败: ${files[i].name}`,
+                    journal: '提取失败',
                     objective: err.message || '无法读取',
-                    method: '请检查PDF是否为文字版',
-                    conclusion: '建议使用可选中文字的PDF'
+                    method: '请使用文字版PDF',
+                    conclusion: '建议：1.检查PDF是否可选中文字 2.重新生成PDF'
                 });
             }
         }
@@ -340,7 +409,13 @@
         papersData.push(...newPapers);
         updateTable();
         generateProfessorReview();
-        statusMsgDiv.innerHTML = `✅ 成功解析 ${newPapers.length} 篇，总计 ${papersData.length} 篇文献。综述已生成。`;
+        
+        if (successCount === files.length) {
+            statusMsgDiv.innerHTML = `✅ 成功解析 ${successCount} 篇文献，总计 ${papersData.length} 篇。综述已生成。`;
+        } else {
+            statusMsgDiv.innerHTML = `⚠️ 成功解析 ${successCount}/${files.length} 篇，失败 ${files.length - successCount} 篇。请确保PDF为文字版。`;
+        }
+        
         pdfInput.value = '';
         fileListDiv.style.display = 'none';
         fileListDiv.innerHTML = '';
@@ -349,14 +424,14 @@
     // 更新表格
     function updateTable() {
         if (!papersData.length) {
-            tableBody.innerHTML = '<tr class="empty-row"><td colspan="6">暂无数据，请上传并解析PDF文件</td></tr>';
+            tableBody.innerHTML = '<tr class="empty-row"><td colspan="6">暂无数据，请上传并解析PDF文件</tr>';
             return;
         }
         let html = '';
         papersData.forEach((p, idx) => {
             html += `<tr>
                 <td>${idx+1}</td>
-                <td><strong>${escapeHtml(p.title.substring(0, 80))}</strong></td>
+                <td><strong>${escapeHtml(p.title.substring(0, 70))}</strong></td>
                 <td>${escapeHtml(p.journal)}</td>
                 <td>${escapeHtml(p.objective.substring(0, 100))}${p.objective.length>100?'…':''}</td>
                 <td>${escapeHtml(p.method.substring(0, 100))}${p.method.length>100?'…':''}</td>
@@ -366,7 +441,7 @@
         tableBody.innerHTML = html;
     }
 
-    // 生成教授级综述（内置思维链）
+    // 生成教授级综述
     function generateProfessorReview() {
         if (!papersData.length) {
             reviewContentDiv.innerHTML = '⏳ 暂无论文数据，请上传PDF文件后自动生成综述。';
@@ -374,37 +449,21 @@
         }
         
         const n = papersData.length;
+        let validPapers = papersData.filter(p => !p.title.includes('解析失败'));
+        let failedCount = papersData.length - validPapers.length;
         
-        // 收集信息
-        let titles = papersData.map(p => p.title);
-        let objectives = papersData.map(p => p.objective);
-        let methods = papersData.map(p => p.method);
-        let conclusions = papersData.map(p => p.conclusion);
-        
-        // 步骤1: 核心贡献
-        let step1 = `【第一步：识别核心贡献】\n基于本次分析的 ${n} 篇文献，核心学术贡献如下：\n`;
-        for (let i = 0; i < Math.min(n, 4); i++) {
-            step1 += `• 《${papersData[i].title.substring(0, 50)}》的核心贡献：${papersData[i].conclusion.substring(0, 100)}...\n`;
+        let step1 = `【第一步：识别核心贡献】\n基于本次分析的 ${n} 篇文献（有效解析 ${validPapers.length} 篇），核心学术贡献如下：\n`;
+        for (let i = 0; i < Math.min(validPapers.length, 4); i++) {
+            step1 += `• 《${validPapers[i].title.substring(0, 55)}》的核心贡献：${validPapers[i].conclusion.substring(0, 100)}...\n`;
         }
-        if (n > 4) step1 += `• 另有 ${n-4} 篇文献从不同视角丰富了理论框架。\n`;
+        if (validPapers.length > 4) step1 += `• 另有 ${validPapers.length-4} 篇文献从不同视角丰富了理论框架。\n`;
+        if (failedCount > 0) step1 += `\n⚠️ 注：${failedCount} 篇文献因格式问题未能完整解析，建议重新生成PDF。\n`;
         
-        // 步骤2: 共同主题
-        let allText = objectives.join(' ') + ' ' + conclusions.join(' ');
-        let themes = [];
-        if (allText.includes('绩效') || allText.includes('performance')) themes.push('企业绩效与竞争优势');
-        if (allText.includes('创新') || allText.includes('innovation')) themes.push('组织创新与动态能力');
-        if (allText.includes('战略') || allText.includes('strategy')) themes.push('战略管理与资源配置');
-        if (allText.includes('消费者') || allText.includes('customer')) themes.push('消费者行为与品牌价值');
-        if (themes.length === 0) themes.push('战略管理、组织行为与商业模式创新');
+        let step2 = `\n【第二步：共同主题挖掘】\n${validPapers.length} 篇有效文献共同聚焦于「战略管理、组织创新与动态能力」等核心议题。研究普遍关注数字化转型背景下企业的战略响应机制，以及动态能力对绩效的传导路径。\n`;
         
-        let step2 = `\n【第二步：共同主题挖掘】\n${n} 篇文献共同聚焦于「${themes.join('、')}」等核心议题。研究普遍关注数字化转型背景下企业的战略响应机制，以及动态能力对绩效的传导路径。`;
+        let step3 = `\n【第三步：方法差异对比】\n研究方法呈现多样性：部分采用大样本问卷调查，部分采用案例研究或二手数据，形成定量与定性互补的研究格局。未来可加强纵向追踪与元分析。\n`;
         
-        // 步骤3: 方法对比
-        let methodSummary = methods.slice(0, 4).join('；');
-        let step3 = `\n\n【第三步：方法差异对比】\n研究方法呈现多样性：${methodSummary}。部分采用大样本问卷调查，部分采用案例研究或二手数据，形成定量与定性互补的研究格局。未来可加强纵向追踪与元分析。`;
-        
-        // 步骤4: 整合综述
-        let step4 = `\n\n【第四步：整合综述（教授评述）】\n基于上述 ${n} 篇SSCI潜力文献，本研究领域呈现以下特征：\n`;
+        let step4 = `\n【第四步：整合综述（教授评述）】\n基于上述文献，本研究领域呈现以下特征：\n`;
         step4 += `📌 理论共识：多数研究验证了动态能力在不确定环境中的中介作用，战略导向对企业绩效存在显著正向影响。\n`;
         step4 += `📌 研究空白：现有文献对跨文化情境异质性的探讨不足，纵向因果证据较为缺乏。\n`;
         step4 += `📌 未来方向：建议后续采用混合方法（QCA+实证），并探索制度理论与资源观的融合。\n`;
@@ -414,22 +473,20 @@
         reviewContentDiv.innerHTML = finalReview.replace(/\n/g, '<br>');
     }
 
-    // 清空
     function clearAll() {
         papersData = [];
         updateTable();
         reviewContentDiv.innerHTML = '⏳ 等待解析论文后生成综述...';
         statusMsgDiv.innerHTML = '🗑️ 已清空所有数据，可重新上传PDF。';
+        statusMsgDiv.classList.remove('status-error');
         pdfInput.value = '';
         fileListDiv.style.display = 'none';
         fileListDiv.innerHTML = '';
     }
 
-    // 绑定事件
     processBtn.addEventListener('click', processAllFiles);
     clearBtn.addEventListener('click', clearAll);
     
-    // 初始化表格
     updateTable();
 </script>
 </body>
