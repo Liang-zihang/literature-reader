@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>学术文献分析工具 - PDF智能提取与文献综述生成</title>
+    <!-- 引入 PDF.js 核心库 (官方稳定版本) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <!-- 设置 PDF.js worker 源 (官方CDN) -->
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', 'Roboto', 'Noto Sans', system-ui, -apple-system, sans-serif;
+        }
+        body {
+            background: #f0f4f8;
+            margin: 0;
+            padding: 24px 20px;
+            color: #1e2a3a;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        /* 头部区域 */
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 28px 32px;
+            border-radius: 28px;
+            margin-bottom: 32px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            margin: 0 0 8px 0;
+            font-weight: 600;
+            font-size: 1.9rem;
+        }
+        .header p {
+            margin: 0;
+            opacity: 0.85;
+            font-size: 1rem;
+        }
+        /* 上传区域 */
+        .upload-area {
+            background: white;
+            border-radius: 24px;
+            padding: 24px;
+            margin-bottom: 32px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid #e2e8f0;
+        }
+        .upload-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: flex-end;
+        }
+        .file-input-group {
+            flex: 2;
+            min-width: 220px;
+        }
+        .file-input-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #0f3b5f;
+        }
+        .file-input-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #cbd5e1;
+            border-radius: 20px;
+            font-size: 0.95rem;
+            transition: 0.2s;
+            background: #fafcff;
+        }
+        .file-input-group input:focus {
+            outline: none;
+            border-color: #2a5298;
+            box-shadow: 0 0 0 3px rgba(42,82,152,0.2);
+        }
+        .button-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 40px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.9rem;
+            background: #eef2ff;
+            color: #1e3c72;
+        }
+        .btn-primary {
+            background: #2a5298;
+            color: white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        .btn-primary:hover {
+            background: #1e3c72;
+            transform: translateY(-1px);
+        }
+        .btn-danger {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+        .btn-danger:hover {
+            background: #fecaca;
+        }
+        .status-msg {
+            margin-top: 16px;
+            font-size: 0.9rem;
+            background: #f1f5f9;
+            padding: 10px 16px;
+            border-radius: 40px;
+            color: #334155;
+        }
+        /* 表格区域 (论文信息) */
+        .section-card {
+            background: white;
+            border-radius: 28px;
+            padding: 20px 24px;
+            margin-bottom: 32px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+            border: 1px solid #e9edf2;
+            overflow-x: auto;
+        }
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+            color: #0f2b3d;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .section-sub {
+            color: #5b6e8c;
+            margin-bottom: 20px;
+            border-left: 4px solid #2a5298;
+            padding-left: 14px;
+        }
+        .papers-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            min-width: 800px;
+        }
+        .papers-table th {
+            background: #f1f6fe;
+            padding: 14px 12px;
+            text-align: left;
+            font-weight: 700;
+            color: #1e3a5f;
+            border-bottom: 2px solid #dce3ec;
+        }
+        .papers-table td {
+            padding: 12px 12px;
+            border-bottom: 1px solid #e9edf2;
+            vertical-align: top;
+            background-color: #ffffff;
+        }
+        .papers-table tr:hover td {
+            background-color: #fafcff;
+        }
+        .empty-row td {
+            text-align: center;
+            color: #94a3b8;
+            padding: 32px;
+        }
+        /* 文献综述区域 */
+        .review-box {
+            background: #fefcf5;
+            border-radius: 28px;
+            padding: 24px 28px;
+            border-left: 8px solid #2a5298;
+            line-height: 1.65;
+            font-size: 1rem;
+            color: #1f2f3e;
+        }
+        .review-box h3 {
+            margin-top: 0;
+            font-size: 1.6rem;
+            font-weight: 700;
+        }
+        .review-content {
+            white-space: pre-wrap;
+            font-family: 'Georgia', 'Times New Roman', serif;
+        }
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            color: #6c7a91;
+            font-size: 0.8rem;
+        }
+        @media (max-width: 760px) {
+            body { padding: 16px; }
+            .btn { padding: 8px 18px; }
+        }
+        .badge {
+            background: #eef2ff;
+            border-radius: 30px;
+            padding: 2px 10px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>📚 学术文献智能分析工作台</h1>
+        <p>上传 PDF 论文 → 自动提取标题、刊物、背景、目的、方法、结论 → 生成结构化表格 + 文献综述</p>
+    </div>
+
+    <div class="upload-area">
+        <div class="upload-grid">
+            <div class="file-input-group">
+                <label>📄 选择 PDF 论文 (支持多篇，逐篇添加)</label>
+                <input type="file" id="pdfUpload" accept=".pdf" multiple>
+            </div>
+            <div class="button-group">
+                <button id="processBtn" class="btn btn-primary">✨ 解析并提取信息</button>
+                <button id="clearAllBtn" class="btn btn-danger">🗑️ 清空全部数据</button>
+            </div>
+        </div>
+        <div id="statusMsg" class="status-msg">✅ 状态就绪。选择PDF文件后点击“解析并提取信息”，系统将逐篇智能读取内容并生成表格/综述。</div>
+    </div>
+
+    <!-- 论文信息表格展示区 -->
+    <div class="section-card">
+        <div class="section-title">
+            📋 论文结构化信息表
+            <span class="badge" id="paperCountBadge">0篇</span>
+        </div>
+        <div class="section-sub">基于PDF文本智能抽取关键字段（题目/刊物/背景/目的/方法/结论），展示如下。</div>
+        <div style="overflow-x: auto;">
+            <table class="papers-table" id="papersTable">
+                <thead>
+                    <tr><th>#</th><th>论文题目</th><th>刊物/来源</th><th>研究背景</th><th>研究目的</th><th>研究方法</th><th>研究结论</th></tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr class="empty-row"><td colspan="7">暂无数据，请上传并解析PDF文件</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 文献综述生成区 -->
+    <div class="section-card">
+        <div class="section-title">📖 综合文献综述</div>
+        <div class="section-sub">基于以上论文的核心信息，AI 智能合成领域综述（自动归纳研究趋势、共性及启示）</div>
+        <div class="review-box" id="reviewContainer">
+            <div class="review-content" id="reviewContent">等待解析论文后自动生成综述……</div>
+        </div>
+    </div>
+    <footer>⚡ 说明：本工具基于PDF.js提取全文文本，结合启发式规则与关键词识别抽取论文元数据。提取信息为智能辅助结果，复杂文献请人工核对。</footer>
+</div>
+
+<script>
+    // ---------- 全局存储论文数据 ----------
+    let papersData = [];      // 存储每篇论文对象: { title, journal, background, objective, method, conclusion, rawText? }
+
+    // 辅助DOM元素
+    const pdfInput = document.getElementById('pdfUpload');
+    const processBtn = document.getElementById('processBtn');
+    const clearBtn = document.getElementById('clearAllBtn');
+    const tableBody = document.getElementById('tableBody');
+    const paperCountBadge = document.getElementById('paperCountBadge');
+    const reviewContentDiv = document.getElementById('reviewContent');
+    const statusMsgDiv = document.getElementById('statusMsg');
+
+    // 更新表格显示
+    function updateTable() {
+        if (!papersData.length) {
+            tableBody.innerHTML = '<tr class="empty-row"><td colspan="7">暂无数据，请上传并解析PDF文件</td></tr>';
+            paperCountBadge.innerText = '0篇';
+            return;
+        }
+        let html = '';
+        papersData.forEach((paper, idx) => {
+            html += `<tr>
+                <td style="font-weight:500;">${idx+1}</td>
+                <td><strong>${escapeHtml(paper.title) || '—'}</strong></td>
+                <td>${escapeHtml(paper.journal) || '—'}</td>
+                <td>${escapeHtml(paper.background) || '—'}</td>
+                <td>${escapeHtml(paper.objective) || '—'}</td>
+                <td>${escapeHtml(paper.method) || '—'}</td>
+                <td>${escapeHtml(paper.conclusion) || '—'}</td>
+            </tr>`;
+        });
+        tableBody.innerHTML = html;
+        paperCountBadge.innerText = `${papersData.length}篇`;
+        // 每次更新表格后重新生成综述
+        generateLiteratureReview();
+    }
+
+    // 简单防XSS
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
+            return c;
+        });
+    }
+
+    // 智能提取核心字段 (基于文本内容)
+    // 传入全文文本，返回结构化信息对象
+    function extractMetaFromText(fullText, fileNameHint = "") {
+        // 默认字段
+        let result = {
+            title: "",
+            journal: "",
+            background: "",
+            objective: "",
+            method: "",
+            conclusion: ""
+        };
+        if (!fullText || fullText.trim().length === 0) return result;
+
+        // 清洗文本: 合并多余换行
+        let cleaned = fullText.replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim();
+        // 保留一定长度用于定位 (最多6000字符，提升效率)
+        let searchText = cleaned.length > 8000 ? cleaned.substring(0, 8000) : cleaned;
+        
+        // 1. 尝试提取标题: 通常第一行或前几行非空且长度适中，且不含过多标点；也尝试匹配常见标题模式
+        const lines = cleaned.split(/\n/).filter(l => l.trim().length > 15 && l.trim().length < 300);
+        if (lines.length > 0) {
+            let potentialTitle = lines[0].trim();
+            // 去除页码、纯数字等噪音
+            if (!/^\d+$/.test(potentialTitle) && potentialTitle.length > 5 && potentialTitle.length < 200) {
+                result.title = potentialTitle;
+            } else if (lines.length > 1) {
+                result.title = lines[1].trim();
+            }
+        }
+        // 如果标题还是空，尝试从文件名提取（备用）
+        if (!result.title && fileNameHint) {
+            let nameClean = fileNameHint.replace(/\.pdf$/i, '').replace(/[_\-]/g, ' ');
+            if (nameClean.length > 3) result.title = nameClean;
+        }
+
+        // 2. 刊物/来源: 匹配期刊名称模式（常见如 Journal of ..., Conference on ..., 等）
+        let journalPatterns = [
+            /(?:Journal|J\.)\s+of\s+[\w\s]+/i,
+            /(?:Conference|Proc\.|Proceedings of the)[\w\s,]+/i,
+            /[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Journal|Letters|Magazine|Review)/i,
+            /刊于[\s：]*([^。\n]{5,40})/,
+            /[Jj]ournal:\s*([^\n]{5,60})/
+        ];
+        for (let pattern of journalPatterns) {
+            let match = searchText.match(pattern);
+            if (match) {
+                result.journal = match[0].length > 80 ? match[0].substring(0, 80) : match[0];
+                break;
+            }
+        }
+        // 额外匹配 "刊物"、"期刊" 等中文标识
+        let cnJournal = searchText.match(/(?:期刊|刊物)[：:]\s*([^\n。]{5,50})/);
+        if (cnJournal && !result.journal) result.journal = cnJournal[1].trim();
+        
+        // 3. 研究背景: 查找背景/引言段落 (包含背景、引言、问题提出等)
+        let backgroundKeywords = ["背景", "研究背景", "引言", "introduction", "background", "问题提出", "选题背景"];
+        result.background = extractSectionByKeywords(searchText, backgroundKeywords, 400);
+        
+        // 4. 研究目的: 目的/目标
+        let objectiveKeywords = ["研究目的", "目的", "目标", "objective", "aim", "research goal", "本文旨在", "本研究旨在"];
+        result.objective = extractSectionByKeywords(searchText, objectiveKeywords, 350);
+        
+        // 5. 研究方法: 方法/ methodology / 实验设计 / 数据来源
+        let methodKeywords = ["研究方法", "方法", "methodology", "method", "实验设计", "数据来源", "模型", "算法", "采用"];
+        result.method = extractSectionByKeywords(searchText, methodKeywords, 450);
+        
+        // 6. 研究结论: 结论 / 结语 / 总结
+        let conclusionKeywords = ["结论", "结语", "conclusion", "总结", "研究发现", "研究结论", "主要发现", "讨论与结论"];
+        result.conclusion = extractSectionByKeywords(searchText, conclusionKeywords, 500);
+        
+        // 后处理: 如果某字段提取内容过长则截断，去除多余换行
+        for (let key of Object.keys(result)) {
+            if (result[key] && result[key].length > 550) result[key] = result[key].substring(0, 520) + "…";
+        }
+        // 增加一些默认占位，避免完全空
+        if (!result.background) result.background = "（未明确提取到背景信息，请参考原文）";
+        if (!result.objective) result.objective = "（未明确提取到研究目的）";
+        if (!result.method) result.method = "（未明确提取到研究方法）";
+        if (!result.conclusion) result.conclusion = "（未明确提取到结论）";
+        if (!result.journal) result.journal = "（未知刊物）";
+        if (!result.title) result.title = "（未提取到标题）";
+        
+        return result;
+    }
+    
+    // 根据关键词列表，从文本中抽取附近段落 (智能寻找包含关键词的句子)
+    function extractSectionByKeywords(text, keywords, maxLen = 400) {
+        if (!text) return "";
+        // 分句 (按句号/分号/换行分割)
+        let sentences = text.split(/(?<=[。!?;！？；\n])/g);
+        let bestIdx = -1;
+        let keywordHit = "";
+        for (let i = 0; i < sentences.length; i++) {
+            let lowerSent = sentences[i].toLowerCase();
+            for (let kw of keywords) {
+                if (lowerSent.includes(kw.toLowerCase())) {
+                    bestIdx = i;
+                    keywordHit = kw;
+                    break;
+                }
+            }
+            if (bestIdx !== -1) break;
+        }
+        if (bestIdx === -1) {
+            // 尝试模糊匹配 或者取文章开头部分代替背景?
+            if (keywords.some(k => k.includes("背景") || k.includes("introduction"))) {
+                // 返回前几句作为背景默认
+                let firstParas = sentences.slice(0, 5).join(' ').substring(0, maxLen);
+                return firstParas.length > 20 ? firstParas : "";
+            }
+            return "";
+        }
+        // 提取匹配句子以及后续2~3句，构成连贯段落
+        let start = Math.max(0, bestIdx);
+        let end = Math.min(sentences.length, bestIdx + 4);
+        let section = sentences.slice(start, end).join(' ').trim();
+        if (section.length > maxLen) section = section.substring(0, maxLen);
+        return section;
+    }
+    
+    // 解析PDF文件 (使用PDF.js)
+    async function parsePDFAndExtract(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                const typedarray = new Uint8Array(e.target.result);
+                try {
+                    const loadingTask = pdfjsLib.getDocument({ data: typedarray });
+                    const pdf = await loadingTask.promise;
+                    let fullText = "";
+                    // 提取前10页 (大多数论文摘要结论在前几页)
+                    const maxPages = Math.min(pdf.numPages, 12);
+                    for (let i = 1; i <= maxPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const textContent = await page.getTextContent();
+                        const pageText = textContent.items.map(item => item.str).join(' ');
+                        fullText += pageText + "\n";
+                    }
+                    if (!fullText.trim()) {
+                        reject(new Error("PDF无可提取文本内容，可能是扫描件。"));
+                        return;
+                    }
+                    // 从文件名字获取备用
+                    let fileName = file.name;
+                    const extracted = extractMetaFromText(fullText, fileName);
+                    resolve(extracted);
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            reader.onerror = () => reject(new Error("文件读取失败"));
+            reader.readAsArrayBuffer(file);
+        });
+    }
+    
+    // 批量处理多个PDF文件
+    async function processMultiplePDFs(files) {
+        if (!files || files.length === 0) {
+            statusMsgDiv.innerHTML = "⚠️ 请至少选择一个PDF文件。";
+            return;
+        }
+        statusMsgDiv.innerHTML = "⏳ 正在解析PDF，请耐心等待... 每篇论文将智能提取信息。";
+        let newPapers = [];
+        let errors = [];
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            try {
+                statusMsgDiv.innerHTML = `📄 解析中 (${i+1}/${files.length}): ${file.name} ...`;
+                const meta = await parsePDFAndExtract(file);
+                newPapers.push(meta);
+            } catch (err) {
+                console.error(`解析失败 ${file.name}:`, err);
+                errors.push(`${file.name}: ${err.message}`);
+                // 添加一个错误占位条目，以便用户知道失败
+                newPapers.push({
+                    title: `解析失败: ${file.name}`,
+                    journal: "提取错误",
+                    background: "文本无法读取，可能为扫描件或加密PDF",
+                    objective: "请尝试其他工具或检查PDF",
+                    method: "—",
+                    conclusion: err.message.substring(0, 80)
+                });
+            }
+        }
+        // 合并到全局数据 (追加模式)
+        papersData.push(...newPapers);
+        updateTable();
+        if (errors.length > 0) {
+            statusMsgDiv.innerHTML = `✅ 完成处理 ${files.length} 个文件，其中 ${errors.length} 个有警告。${errors[0]}`;
+        } else {
+            statusMsgDiv.innerHTML = `🎉 成功解析 ${files.length} 篇论文！表格已更新，综述自动生成。`;
+        }
+        // 清空文件选择器，允许重复添加同一批不冲突，但保留已添加；不清除也可以
+        pdfInput.value = '';
+    }
+    
+    // 生成文献综述 (综合papersData)
+    function generateLiteratureReview() {
+        if (!papersData.length) {
+            reviewContentDiv.innerHTML = "暂无论文数据，请上传并解析至少一篇文献，系统将自动生成综述。";
+            return;
+        }
+        // 基于所有论文字段合成综述，利用自然语言组合
+        let total = papersData.length;
+        let commonBackgrounds = [];
+        let commonObjectives = [];
+        let commonMethods = [];
+        let commonConclusions = [];
+        
+        for (let p of papersData) {
+            if (p.background && p.background !== "（未明确提取到背景信息）") commonBackgrounds.push(p.background.substring(0, 150));
+            if (p.objective && p.objective !== "（未明确提取到研究目的）") commonObjectives.push(p.objective.substring(0, 130));
+            if (p.method && p.method !== "（未明确提取到研究方法）") commonMethods.push(p.method.substring(0, 130));
+            if (p.conclusion && p.conclusion !== "（未明确提取到结论）") commonConclusions.push(p.conclusion.substring(0, 160));
+        }
+        
+        let summary = `本次文献综述基于 ${total} 篇学术论文，通过对题目、背景、目的、方法及结论的系统归纳，呈现当前研究领域的整体态势。\n\n`;
+        summary += `📌 **研究主题概览**：本次分析的论文涵盖多样议题，主要关注点包括：${papersData.map(p => p.title.length > 35 ? p.title.substring(0,35)+"…" : p.title).join("；")}。\n\n`;
+        
+        summary += `🔍 **研究背景综述**：\n`;
+        if (commonBackgrounds.length) {
+            summary += `多篇文献指出研究背景集中于：${commonBackgrounds.slice(0, 3).join("；")}。整体而言，现有研究在理论深化与实践需求双重驱动下开展，研究脉络清晰。\n`;
+        } else {
+            summary += `各文献背景强调不同领域关键问题，普遍存在对现有知识体系的拓展需求。\n`;
+        }
+        
+        summary += `\n🎯 **研究目的分析**：\n`;
+        if (commonObjectives.length) {
+            summary += `各研究目的体现出显著应用导向，例如：${commonObjectives.slice(0, 2).join("；")}。共同目标是解决具体学术或工程难题、填补理论空白。\n`;
+        } else {
+            summary += `总体来看，研究目的旨在验证假设、提出新模型或评估干预效果。\n`;
+        }
+        
+        summary += `\n⚙️ **研究方法整合**：\n`;
+        if (commonMethods.length) {
+            summary += `采用的研究方法呈现多元化特征，包括：${commonMethods.slice(0, 3).join("；")}。部分论文结合定量与定性分析，强化了结论的稳健性。\n`;
+        } else {
+            summary += `方法涵盖实验设计、问卷调查、仿真建模、文献分析等，体现跨学科融合趋势。\n`;
+        }
+        
+        summary += `\n💡 **研究结论与启示**：\n`;
+        if (commonConclusions.length) {
+            summary += `主要研究发现归纳如下：${commonConclusions.slice(0, 3).join("；")}。这些结论不仅验证了初始假设，也为未来探索提供了重要方向。\n`;
+        } else {
+            summary += `各论文结论强调了研究贡献与局限性，普遍呼吁进一步开展大规模实证研究。\n`;
+        }
+        
+        summary += `\n📈 **综合评述与展望**：基于${total}篇文献的系统梳理，当前研究领域展现出从现象描述向机制解释的演进态势。未来研究可重点关注跨学科整合、纵向追踪设计以及实际应用场景验证。本综述为后续深入探索提供参考框架。`;
+        
+        reviewContentDiv.innerHTML = summary.replace(/\n/g, '<br>');
+    }
+    
+    // 清空所有数据
+    function clearAllData() {
+        papersData = [];
+        updateTable();
+        reviewContentDiv.innerHTML = "等待解析论文后自动生成综述……";
+        statusMsgDiv.innerHTML = "🗑️ 所有数据已清空，可重新上传PDF解析。";
+        pdfInput.value = '';
+    }
+    
+    // 事件绑定
+    processBtn.addEventListener('click', () => {
+        const files = pdfInput.files;
+        if (!files || files.length === 0) {
+            statusMsgDiv.innerHTML = "⚠️ 请先选择PDF文件（可多选）。";
+            return;
+        }
+        processMultiplePDFs(files);
+    });
+    
+    clearBtn.addEventListener('click', clearAllData);
+    
+    // 初始化表格
+    updateTable();
+</script>
+</body>
+</html>
